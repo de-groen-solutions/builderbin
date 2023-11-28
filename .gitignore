@@ -1,2 +1,5 @@
-dockerfiles/
 target/
+
+# Preset output
+build.sh
+.bbin/

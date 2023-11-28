@@ -1,4 +1,12 @@
 images:
+  ghcr.io/de-groen-solutions/builderbin-aarch64-alacritty:18.04:
+    base: "ghcr.io/de-groen-solutions/builderbin-aarch64-rust:18.04"
+    steps:
+      - install:
+        - libfreetype6-dev:arm64
+        - libpng-dev:arm64
+          
+
   ghcr.io/de-groen-solutions/builderbin-aarch64-agentui:18.04:
     base: "ghcr.io/de-groen-solutions/builderbin-aarch64-rust:18.04"
     steps:
@@ -12,15 +20,8 @@ images:
           - libgtk-3-dev:arm64
           - libpango1.0-dev:arm64
           - libudev-dev:arm64
-
-          # - libatk1.0-0:arm64
-          # - libcairo2:arm64
-          # - libgdk-pixbuf2.0-0:arm64
-          # - libglib2.0-0:arm64
-          # - libgstreamer-plugins-base1.0-0:arm64
-          # - libgstreamer1.0-0:arm64
-          # - libgtk-3-0:arm64
-          # - libpango1.0-0:arm64
+          - libsystemd-dev:arm64
+          - libssl-dev:arm64
 
   ghcr.io/de-groen-solutions/builderbin-aarch64-rust:18.04:
     base: "ghcr.io/de-groen-solutions/builderbin-aarch64-gcc:18.04"
@@ -32,7 +33,12 @@ images:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
           CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
-
+          RUSTC_WRAPPER: "sccache"
+      #- mount:
+      #    type: cache
+      #   container: /root/.cargo/registry
+      - install:
+          - libssl-dev
       - run: |
           curl -sSf https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init -o /usr/bin/rustup-init
           chmod +x /usr/bin/rustup-init
@@ -41,6 +47,7 @@ images:
           rustup target add aarch64-unknown-linux-gnu --toolchain nightly
           rustc --version
           cargo --version
+          RUSTC_WRAPPER= cargo install sccache
 
   ghcr.io/de-groen-solutions/builderbin-aarch64-gcc:18.04:
     base: "ghcr.io/de-groen-solutions/builderbin-aarch64-base:18.04"
@@ -59,8 +66,90 @@ images:
           - pkg-config
           - wget
           - protobuf-compiler
+          - unzip
+      - run: |
+          wget https://github.com/protocolbuffers/protobuf/releases/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip -O protoc-3.15.8-linux-x86_64.zip
+          unzip protoc-3.15.8-linux-x86_64.zip -d ${HOME}/.local
 
   ghcr.io/de-groen-solutions/builderbin-aarch64-base:18.04:
+    image: "ubuntu:18.04"
+    steps:
+      - env:
+          "DEBIAN_FRONTEND": "noninteractive"
+          "TZ": "Europe/Amsterdam"
+          "CI": "true"
+
+      - sources: |
+          deb [arch=amd64,i386] http://nl.archive.ubuntu.com/ubuntu/ bionic main restricted universe multiverse
+          deb [arch=amd64,i386] http://nl.archive.ubuntu.com/ubuntu/ bionic-updates main restricted universe multiverse
+          deb [arch=amd64,i386] http://nl.archive.ubuntu.com/ubuntu/ bionic-backports main restricted universe multiverse
+          deb [arch=amd64,i386] http://security.ubuntu.com/ubuntu bionic-security main restricted universe multiverse
+
+          deb [arch=arm64,armhf,ppc64el,s390x] http://ports.ubuntu.com/ubuntu-ports/ bionic main restricted universe multiverse
+          deb [arch=arm64,armhf,ppc64el,s390x] http://ports.ubuntu.com/ubuntu-ports/ bionic-updates main restricted universe multiverse
+          deb [arch=arm64,armhf,ppc64el,s390x] http://ports.ubuntu.com/ubuntu-ports/ bionic-backports main restricted universe multiverse
+          deb [arch=arm64,armhf,ppc64el,s390x] http://ports.ubuntu.com/ubuntu-ports/ bionic-security main restricted universe multiverse
+
+      - run: |
+          apt-get update
+          apt-get install -y wajig
+          dpkg --add-architecture arm64
+          apt-get clean
+          wajig clean
+          rm -rdf /var/lib/apt/lists/*
+          rm -rdf /tmp/*
+          rm -rdf /var/tmp/*
+          rm -rdf /var/cache/apt/archives/*
+
+  ghcr.io/de-groen-solutions/builderbin-armhf-rust:18.04:
+    base: "ghcr.io/de-groen-solutions/builderbin-armhf-gcc:18.04"
+    steps:
+      - env:
+          CARGO_HOME: "/root/.cargo"
+          RUSTUP_HOME: "/root/.rustup"
+          PATH: "/root/.cargo/bin:$PATH"
+          CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER: "/opt/cross-pi-gcc/bin/arm-linux-gnueabihf-gcc-8.3.0"
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+          CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
+
+      - install:
+          - libfontconfig-dev:armhf
+          - libfontconfig1-dev:armhf
+          - git
+          - build-essential
+          - libssl-dev
+
+      - run: |
+          curl -sSf https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init -o /usr/bin/rustup-init
+          chmod +x /usr/bin/rustup-init
+          rustup-init -y --no-modify-path --default-toolchain stable --target arm-unknown-linux-gnueabihf
+          rustc --version
+          cargo --version
+
+          curl -LO https://github.com/Pro/raspi-toolchain/releases/latest/download/raspi-toolchain.tar.gz
+
+          tar xfz raspi-toolchain.tar.gz --strip-components=1 -C /opt
+
+  ghcr.io/de-groen-solutions/builderbin-armhf-gcc:18.04:
+    base: "ghcr.io/de-groen-solutions/builderbin-armhf-base:18.04"
+    steps:
+      - env:
+          PKG_CONFIG_PATH: "/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/local/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig:/usr/local/musl/lib/pkgconfig:/usr/lib/musl/armv7-unknown-linux-musleabihf/lib/pkgconfig"
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          PKG_CONFIG_ALL_STATIC: "1"
+          CC_arm_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+          CXX_arm_unknown_linux_gnueabihf: arm-linux-gnueabihf-g++
+      - install:
+          - curl
+          - g++-arm-linux-gnueabihf
+          - gcc
+          - pkg-config
+          - wget
+          - protobuf-compiler
+          - unzip
+          - cmake
+
+  ghcr.io/de-groen-solutions/builderbin-armhf-base:18.04:
     image: ubuntu:18.04
     steps:
       - env:
@@ -80,7 +169,7 @@ images:
       - run: |
           apt-get update
           apt-get install -y wajig
-          dpkg --add-architecture arm64
+          dpkg --add-architecture armhf
           apt-get clean
           wajig clean
           rm -rdf /var/lib/apt/lists/*
