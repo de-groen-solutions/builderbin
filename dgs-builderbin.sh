@@ -26,6 +26,8 @@ indented() {
 CONTEXT_DIR=${CONTEXT_DIR:-${PWD}}
 WORK_DIR=${WORK_DIR:-${PWD}}
 IMAGE_PARTIAL_NAME=$1
+
+# Put args into array RUN_ARGS
 shift || true
 ENV_VARS=()
 while [[ "$#" -gt 0 && "$1" == *"="* ]]; do
@@ -34,32 +36,61 @@ while [[ "$#" -gt 0 && "$1" == *"="* ]]; do
 done
 RUN_ARGS=("$@")
 
+BUILDERBIN_TTY=${BUILDERBIN_TTY:-}
 BUILDERBIN_ENV=${BUILDERBIN_ENV:-}
-echo check
+
+print_local_partial_image_names() {
+	docker images | grep builderbin | sed 's/ghcr.io\/de-groen-solutions\/builderbin-//g' | awk '{print $1 ":" $2}' | sort | uniq
+}
+
 # shellcheck disable=SC2016
-if [ -z "$IMAGE_PARTIAL_NAME" ] || [ -z "$CONTEXT_DIR" ] || [ -z "$WORK_DIR" ] || [ -z "${RUN_ARGS[*]}" ]; then
-    echo "Usage: $0 <IMAGE_PARTIAL_NAME> [ENV_VARS] <RUN_ARGS>"
-    echo "Example: $0 aarch64 VAR1=value1 VAR2=value2 gcc --version"
-	echo ""
-	echo "Local images:"
-	docker images | grep builderbin | awk '{print " - " $1 ":" $2}' | sort | uniq | sed 's/ghcr.io\/de-groen-solutions\/builderbin-//g'
-    exit 1
-fi
+usage() {
+    echo "Usage:"
+	echo "  $0 <IMAGE_PARTIAL_NAME> [ENV_VARS] <RUN_ARGS>"
+	echo
+    echo "Example:"
+	echo "  $0 aarch64 VAR1=value1 VAR2=value2 gcc --version"
+	echo
+	echo "Local partial image names:"
+	print_local_partial_image_names | awk '{print " - " $0}'
+}
 
 IMAGE_NAME="ghcr.io/de-groen-solutions/builderbin-$IMAGE_PARTIAL_NAME"
 
 make_cmd() {
-    echo docker run --rm -it --volume "${CONTEXT_DIR}:${CONTEXT_DIR}" --volume "${HOME}/sccache:${HOME}/sccache" --env SCCACHE_CACHE_SIZE=100G --env SCCACHE_DIR="${HOME}/sccache/sccache" --workdir "${WORK_DIR}" --privileged ${ENV_VARS[*]} "${IMAGE_NAME}" ${RUN_ARGS[*]}
+    echo docker run \
+		--privileged --rm -it \
+		--workdir "${WORK_DIR}" \
+		--volume "${CONTEXT_DIR}:${CONTEXT_DIR}" \
+		--volume "${HOME}/.cargo/registry:/root/.cargo/registry" \
+		${ENV_VARS[*]} \
+		${IMAGE_NAME} \
+		${RUN_ARGS[*]}
 }
 
-yellow "$(bold "BUILDERBIN:")"
-yellow "  CONTEXT_DIR: $CONTEXT_DIR"
-yellow "  WORK_DIR: $WORK_DIR"
-yellow "  IMAGE_NAME: $IMAGE_NAME"
-yellow "  ENV_VARS: ${ENV_VARS[*]}"
-yellow "  RUN_ARGS: ${RUN_ARGS[*]}"
-yellow ""
-yellow "$ $(make_cmd)"
-yellow ""
+main() {
+	if [ -z "$IMAGE_PARTIAL_NAME" ] || [ -z "$CONTEXT_DIR" ] || [ -z "$WORK_DIR" ] || [ -z "${RUN_ARGS[*]}" ]; then
+		usage
+		exit 1
+	fi
 
-eval "$(make_cmd)" 2>&1 | indented
+	yellow "$(bold "BUILDERBIN:")"
+	yellow "  CONTEXT_DIR: $CONTEXT_DIR"
+	yellow "  WORK_DIR: $WORK_DIR"
+	yellow "  IMAGE_NAME: $IMAGE_NAME"
+	yellow "  ENV_VARS: ${ENV_VARS[*]}"
+	yellow "  RUN_ARGS: ${RUN_ARGS[*]}"
+	yellow ""
+	yellow "$ $(make_cmd)"
+	yellow ""
+
+	if [ $BUILDERBIN_TTY ]; then
+		eval "$(make_cmd)"
+		exit 0
+	else
+		eval "$(make_cmd)" 2>&1 | indented
+	fi
+}
+
+main
+
